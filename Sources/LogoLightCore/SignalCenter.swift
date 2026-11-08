@@ -105,6 +105,14 @@ public final class SignalCenter {
         pomodoroEndsAt.map { max(0, $0.timeIntervalSince(now())) }
     }
 
+    /// Whether the Mac is charging with the battery indicator on: the logo pulses softly, below every other
+    /// signal.
+    public func setCharging(_ charging: Bool) {
+        guard sources.charging != charging else { return }
+        sources.charging = charging
+        update()
+    }
+
     /// Stops the countdowns, e.g. before quitting. The signals stay as they are.
     public func cancelTimers() {
         claudeExpiry?.cancel()

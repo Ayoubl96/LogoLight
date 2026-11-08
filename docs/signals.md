@@ -7,7 +7,7 @@ the message is done. Signals need direct control of the logo (the default on a M
 Display) and play while the logo is on and the display is awake, like effects.
 
 When several signals are active at once, the most important one shows: waiting for an answer, then a
-finished Pomodoro, then Claude Code working, then a Pomodoro in progress.
+finished Pomodoro, then Claude Code working, then a Pomodoro in progress, then charging.
 
 ## Claude Code
 
@@ -46,3 +46,9 @@ Choose **Start Pomodoro** in the menu, or run `logolight-signal pomodoro start [
 default, from 1 to 180). The logo breathes very slowly for the length of the session, then blinks for about
 20 seconds. **Stop Pomodoro** in the menu, or `logolight-signal pomodoro stop`, ends the session or the
 blinking. Starting again replaces the session.
+
+## Charging
+
+With **Battery** switched on, the logo shows your charge as its brightness. While the Mac is also charging
+it pulses softly on top of that, so you can tell the charge is going up. It stops when the battery is full
+or the charger is unplugged, and it gives way to every other signal.

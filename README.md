@@ -38,7 +38,7 @@
       Breathe, Pulse and Heartbeat, made from the LED's own hardware fades, peaking at your brightness.
       <br><br>
       <b>Battery indicator</b><br>
-      Turn on Battery and the logo shows your charge: full brightness when it's full, dimming as it runs down.
+      Turn on Battery and the logo shows your charge: full brightness when it's full, dimming as it runs down, and pulsing softly while it charges.
       <br><br>
       <b>Morse code</b><br>
       Type a message and press play to flash it. Turn on loop to repeat it until you stop it.

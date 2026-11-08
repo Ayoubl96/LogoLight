@@ -223,4 +223,17 @@ func signalCenterTests(_ t: TestHarness) async {
         t.expect(r.shown == [.working, .finished, .working], "\(r.shown)")
         center.cancelTimers()
     }
+    t.test("charging pulses below every other signal, and stops with the charge") {
+        let r = Recorder()
+        let center = makeCenter(r)
+        center.setCharging(true)
+        center.setCharging(true) // nothing new
+        center.startPomodoro(minutes: 25)
+        center.setClaude(.working)
+        center.setClaude(nil)
+        center.stopPomodoro()
+        center.setCharging(false)
+        t.expect(r.shown == [.charging, .focus, .working, .focus, .charging, nil], "\(r.shown)")
+        center.cancelTimers()
+    }
 }

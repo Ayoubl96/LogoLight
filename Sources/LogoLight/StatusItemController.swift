@@ -89,10 +89,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         controller.willPromptForPassword = { [weak self] in await self?.closeMenuForPasswordDialog() }
         observeDisplay()
         observeSignals()
+        updateChargingSignal()
         // About once a minute. The controller only reads the battery while it's followed, and only
         // fades when the percentage has changed; the panel's slider then shows the new charge.
         batteryObserver = BatteryObserver { [weak self] in
             self?.controller.batteryDidChange()
+            self?.updateChargingSignal()
             self?.updateMenu()
         }
 
@@ -426,6 +428,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private func setFollowsBattery(_ follows: Bool) {
         controller.setFollowsBattery(follows)
         UserDefaults.standard.set(follows, forKey: Self.followsBatteryDefaultsKey)
+        updateChargingSignal()
         // The slider now shows the charge, or the chosen brightness again.
         updateMenu()
     }
@@ -559,6 +562,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             // now: a cancelled or failed dialog has thrown, and the earlier choice stands.
             UserDefaults.standard.set(!enable, forKey: Self.keepsPasswordDefaultsKey)
         }
+    }
+
+    /// With the battery indicator on, the logo also pulses while the Mac charges. (It shows the charge as
+    /// brightness; the pulse says it's going up.)
+    private func updateChargingSignal() {
+        signals?.setCharging(controller.followsBattery && Battery.isCharging() == true)
     }
 
     @objc private func togglePomodoro() {
