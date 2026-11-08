@@ -76,7 +76,8 @@
 ## Signals
 
 Other programs can make the logo show what they are doing. Connect `logolight-signal` to Claude Code's
-hooks and the logo breathes while Claude Code works and blinks when it waits for you. See
+hooks and the logo breathes while Claude Code works and blinks when it waits for you. **Start Pomodoro** in
+the menu makes it breathe slowly for a focus session and blink when it's over. See
 [docs/signals.md](docs/signals.md).
 
 ## Install

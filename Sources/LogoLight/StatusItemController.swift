@@ -16,6 +16,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let passwordlessItem = NSMenuItem()
     private let lidClosedItem = NSMenuItem()
     private let launchAtLoginItem = NSMenuItem()
+    private let pomodoroItem = NSMenuItem()
 
     private var status = LogoStatus.unsupported
     /// Waiting for a password or `sudo` (the fallback path), or for the menu to close before a
@@ -152,6 +153,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         lidClosedItem.action = #selector(toggleLightsWithLidClosed)
         lidClosedItem.toolTip = "Keep the logo lit when you close the lid to use an external display. The keyboard stays dark."
 
+        // Start or stop a Pomodoro session: the logo breathes slowly while it runs and blinks when it's over.
+        // The title and subtitle are set in `updateMenu()`.
+        pomodoroItem.title = "Start Pomodoro"
+        pomodoroItem.target = self
+        pomodoroItem.action = #selector(togglePomodoro)
+        pomodoroItem.toolTip = "The logo breathes slowly for the length of the session, then blinks when it's over."
+
         launchAtLoginItem.title = "Launch at Login"
         launchAtLoginItem.target = self
         launchAtLoginItem.action = #selector(toggleLaunchAtLogin)
@@ -161,6 +169,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.items = [
             panelItem,
+            .separator(),
+            pomodoroItem,
             .separator(),
             passwordlessItem, lidClosedItem, launchAtLoginItem,
             .separator(),
@@ -292,7 +302,28 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         lidClosedItem.isHidden = !status.isSupported || !controller.canLightWithLidClosed
         lidClosedItem.state = controller.lightsWithLidClosed ? .on : .off
         launchAtLoginItem.state = isLaunchAtLoginEnabled ? .on : .off
+        updatePomodoroItem()
         updateControl(state)
+    }
+
+    /// Start while there's no session, Stop while one runs or the logo blinks at its end. Signals need
+    /// direct control of the logo.
+    private func updatePomodoroItem() {
+        pomodoroItem.isHidden = !status.isSupported || !controller.canControlDirectly
+        let subtitle: String
+        switch signals?.sources.pomodoro {
+        case .focus?:
+            let minutes = Int(((signals?.pomodoroRemaining ?? 0) / 60).rounded(.up))
+            pomodoroItem.title = "Stop Pomodoro"
+            subtitle = "\(max(minutes, 1)) min left"
+        case .finished?:
+            pomodoroItem.title = "Stop Pomodoro"
+            subtitle = "Time's up"
+        default:
+            pomodoroItem.title = "Start Pomodoro"
+            subtitle = "\(SignalCommand.defaultPomodoroMinutes) minutes of focus"
+        }
+        if #available(macOS 14.4, *) { pomodoroItem.subtitle = subtitle }
     }
 
     private func controlState(_ state: PanelState) -> ControlLink.State {
@@ -446,6 +477,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         signals = SignalCenter(
             sleep: { try await ContinuousClock().sleep(for: .seconds($0)) },
             apply: { [controller] in controller.setSignal($0) })
+        signals?.onPomodoroChange = { [weak self] in self?.updateMenu() }
         signalObserver = DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name(SignalCommand.notificationName), object: nil, queue: .main
         ) { [weak self] notification in
@@ -527,6 +559,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             // now: a cancelled or failed dialog has thrown, and the earlier choice stands.
             UserDefaults.standard.set(!enable, forKey: Self.keepsPasswordDefaultsKey)
         }
+    }
+
+    @objc private func togglePomodoro() {
+        guard let signals else { return }
+        if signals.sources.pomodoro == nil {
+            signals.startPomodoro(minutes: SignalCommand.defaultPomodoroMinutes)
+        } else {
+            signals.stopPomodoro()
+        }
+        updateMenu()
     }
 
     @objc private func toggleLightsWithLidClosed() {

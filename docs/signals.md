@@ -39,3 +39,10 @@ Connect it to Claude Code's hooks in `~/.claude/settings.json`:
 `PreToolUse` brings the breathing back once you have answered a permission prompt. There is one logo and
 one signal from Claude Code: with several sessions open, the last one to speak wins. A signal that nothing
 ends (Claude Code was killed before its `Stop` hook) is dropped after 30 minutes.
+
+## Pomodoro
+
+Choose **Start Pomodoro** in the menu, or run `logolight-signal pomodoro start [minutes]` (25 minutes by
+default, from 1 to 180). The logo breathes very slowly for the length of the session, then blinks for about
+20 seconds. **Stop Pomodoro** in the menu, or `logolight-signal pomodoro stop`, ends the session or the
+blinking. Starting again replaces the session.
