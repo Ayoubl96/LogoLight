@@ -9,6 +9,7 @@
 // keyboard backlight twice, for a simulated display sleep.
 //
 //   .build/debug/LogoLightLiveTest --morse   # only the Morse code check (about 15 s)
+//   .build/debug/LogoLightLiveTest --signals # only the signals check (about 35 s)
 //   .build/debug/LogoLightLiveTest --lid
 //
 // checks Lit with Lid Closed instead, with an external display attached. It asks aloud for the
@@ -172,6 +173,35 @@ if CommandLine.arguments.contains("--morse-loop") {
     await morseLoopCheck(seconds: 30)
     report("morse loop stopped -> back to brightness", expected: level(0.5))
     controller.restoreNormalLighting(); await wait(0.8)
+    exit(0)
+}
+
+// MARK: - Signals (only with --signals)
+
+/// Each signal in turn, from the logo held at brightness 0.5 with Pulse chosen. While one plays the logo
+/// should move in its own pattern, not Pulse's: working breathes (a cycle takes about 6.8 s, so min and
+/// max should span the range), focus does so even more slowly, waiting blinks about once a second, charging
+/// pulses a little faster than Pulse. Cleared, the logo goes back to Pulse and then to the brightness.
+@MainActor func signalsCheck() async {
+    controller.setEffect(.pulse)
+    await sample("effect Pulse", seconds: 3)
+    for (signal, seconds) in [(LogoSignal.working, 8.0), (.waiting, 4), (.focus, 9), (.charging, 4)] {
+        controller.setSignal(signal)
+        await sample("signal \(signal.rawValue)", seconds: seconds)
+    }
+    controller.setSignal(nil)
+    await sample("signal cleared -> Pulse again", seconds: 3)
+    controller.setEffect(.none); await wait(1.5)
+    report("effect none -> back to brightness", expected: level(0.5))
+}
+
+if CommandLine.arguments.contains("--signals") {
+    controller.restoreNormalLighting(); await wait(0.6)
+    controller.start(brightness: 0.5, effect: .none); await wait(1.5)
+    report("brightness 0.5", expected: level(0.5))
+    await signalsCheck()
+    controller.restoreNormalLighting(); await wait(0.8)
+    report("restoreNormalLighting", expected: 1)
     exit(0)
 }
 

@@ -175,6 +175,21 @@ public final class LogoController {
         if isLitAndAwake { animator.resume() } else { animator.pause() }
     }
 
+    // MARK: - Signals
+
+    /// The signal being shown in place of the effect, if any.
+    public var signal: LogoSignal? { animator?.signal }
+
+    /// Shows `signal` in place of the chosen effect, or with `nil` goes back to it. It needs direct
+    /// control, and plays when the logo is on and the display is awake, as effects do; otherwise it
+    /// is kept until then. A Morse message in progress isn't interrupted: the signal shows once it's done.
+    public func setSignal(_ signal: LogoSignal?) {
+        guard let animator, animator.signal != signal else { return }
+        animator.select(signal: signal)
+        guard animator.morse == nil, !isSwitching else { return }
+        if isLitAndAwake { animator.resume() } else { animator.pause() }
+    }
+
     // MARK: - Morse code
 
     /// The Morse message being sent, if any.

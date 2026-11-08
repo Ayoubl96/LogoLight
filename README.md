@@ -38,7 +38,7 @@
       Breathe, Pulse and Heartbeat, made from the LED's own hardware fades, peaking at your brightness.
       <br><br>
       <b>Battery indicator</b><br>
-      Turn on Battery and the logo shows your charge: full brightness when it's full, dimming as it runs down.
+      Turn on Battery and the logo shows your charge: full brightness when it's full, dimming as it runs down, and pulsing softly while it charges.
       <br><br>
       <b>Morse code</b><br>
       Type a message and press play to flash it. Turn on loop to repeat it until you stop it.
@@ -72,6 +72,13 @@
 </table>
 
 <sub>Drawn by LogoLight's own live view, with the effects' real timing (<code>swift scripts/make-media.swift</code> makes them again).</sub>
+
+## Signals
+
+Other programs can make the logo show what they are doing. Connect `logolight-signal` to Claude Code's
+hooks and the logo breathes while Claude Code works and blinks when it waits for you. **Start Pomodoro** in
+the menu makes it breathe slowly for a focus session and blink when it's over. See
+[docs/signals.md](docs/signals.md).
 
 ## Install
 
@@ -237,8 +244,9 @@ App Sandbox, which rules out both direct control and the admin-command fallback.
 
 | Path | What's there |
 | --- | --- |
-| `Sources/LogoLightCore` | `LogoController`; direct control, brightness and effects (`LightEmitter`, `LogoEffect`); reading the state (I/O Registry); the documented command, the admin dialog and the sudoers rule; what the menu shows (`PanelState`) |
+| `Sources/LogoLightCore` | `LogoController`; direct control, brightness and effects (`LightEmitter`, `LogoEffect`); reading the state (I/O Registry); the documented command, the admin dialog and the sudoers rule; what the menu shows (`PanelState`); signals from outside (`LogoSignal`, `SignalCenter`, `SignalCommand`) |
 | `Sources/LogoLight` | The AppKit menu bar app, including the control panel (`ControlPanel.swift`) |
+| `Sources/logolight-signal` | The command that tells the running app what to signal (`logolight-signal working`), for Claude Code's hooks |
 | `Sources/LogoLightTests` | The test suite (`swift run LogoLightTests`) |
 | `Controls` | The Control Center control, an extension built by `scripts/build-app.sh` |
 | `Resources/Info.plist` | App bundle metadata (template) |

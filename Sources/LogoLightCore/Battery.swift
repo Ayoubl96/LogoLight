@@ -24,6 +24,26 @@ public enum Battery {
     }
 }
 
+extension Battery {
+    /// Whether the internal battery is charging (plugged in and not yet full), or `nil` on a Mac without
+    /// a battery or when it can't be read.
+    public static func isCharging() -> Bool? {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef]
+        else { return nil }
+        for source in sources {
+            guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue()
+                    as? [String: Any],
+                  description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
+                  description[kIOPSIsPresentKey] as? Bool != false,
+                  let charging = description[kIOPSIsChargingKey] as? Bool
+            else { continue }
+            return charging
+        }
+        return nil
+    }
+}
+
 /// Calls `onChange` on the main thread when anything about a power source changes, for as long as
 /// it's kept. That's more often than the percentage changes (the notification for just that is
 /// private), so `onChange` should be cheap and check what changed.

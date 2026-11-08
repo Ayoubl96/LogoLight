@@ -45,6 +45,11 @@ echo "==> Assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/LogoLight"
+# The command that tells the running app what to signal on the logo (`logolight-signal working`), for
+# hooks like Claude Code's. It sits beside the app's binary: /Applications/LogoLight.app/Contents/MacOS/logolight-signal.
+swift build -c release --product logolight-signal
+SIGNAL_BIN="$(swift build -c release --product logolight-signal --show-bin-path)/logolight-signal"
+cp "$SIGNAL_BIN" "$APP/Contents/MacOS/logolight-signal"
 fill Resources/Info.plist "$APP/Contents/Info.plist"
 # Drawn by scripts/make-icon.swift. With Xcode's actool, it also goes in an asset catalog
 # (CFBundleIconName), which newer parts of macOS, like Control Center's gallery, look for.
@@ -131,6 +136,7 @@ if [ -d "$APPEX" ]; then
     codesign --force --sign "$SIGN_IDENTITY" --options runtime "$TIMESTAMP" \
         --entitlements build/controls/Controls.entitlements "$APPEX"
 fi
+codesign --force --sign "$SIGN_IDENTITY" --options runtime "$TIMESTAMP" "$APP/Contents/MacOS/logolight-signal"
 codesign --force --sign "$SIGN_IDENTITY" --options runtime "$TIMESTAMP" "$APP"
 codesign --verify --strict --deep "$APP"
 

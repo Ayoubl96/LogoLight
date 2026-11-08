@@ -344,3 +344,18 @@ stand-in for corebrightnessd, so the live view can be watched on any Mac.
   too: check that the logo goes dark.
 - The `DisplaySelect` route in `docs/corebrightnessd.md`, which might replace holding a fade with a
   real brightness control. Worth trying if the hold causes trouble.
+
+## Signals, Claude Code and Pomodoro (2026-11-08, written on a Linux server, not yet run on the MacBook)
+
+- `LogoSignal` (LogoLightCore) is a pattern from outside the menu (waiting, finished, working, focus,
+  charging). `LogoAnimator.signal` takes the place of the effect like a Morse message does, with the
+  Morse message first. `SignalCenter` keeps what each source says (`SignalSources`) and hands the most
+  important signal to `LogoController.setSignal`. Claude Code's hooks reach it through
+  `logolight-signal working|waiting|idle`, which posts a distributed notification the app listens for
+  (`StatusItemController.observeSignals`); the Pomodoro timer and the charging pulse use the same slot.
+  See `docs/signals.md`.
+- The pure parts (`LogoSignal`, `SignalCommand`, `SignalCenter` and `SignalCenterTests.swift`) were built
+  and run on Linux with Swift 6.0.3. Everything that touches AppKit, IOKit or the fake daemon (the
+  animator and controller changes, `SignalTests.swift`, the menu item, `Battery.isCharging`, the build
+  script) was written without a compiler: **run `make test`, `make app` and `tools/livecheck` first**.
+- The durations in `LogoSignal.cycle` are starting values, to tune by eye on the MacBook.

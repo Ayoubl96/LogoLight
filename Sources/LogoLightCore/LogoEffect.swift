@@ -78,6 +78,10 @@ public final class LogoAnimator {
     /// The Morse message being sent, if any. While it's set it takes the place of the effect, which
     /// keeps its value and comes back when the message is done or stopped.
     public private(set) var morse: MorseMessage?
+    /// The signal from outside being shown, if any. Like a Morse message it takes the place of the
+    /// effect, which keeps its value and comes back when the signal ends. A Morse message in progress
+    /// goes first: the signal shows once it's done.
+    public private(set) var signal: LogoSignal?
     /// Called when `morse` ends by itself: a message sent once has finished, or was interrupted (the
     /// logo turned off, the display slept). Not called for `stopMorse()`.
     public var onMorseEnded: (@MainActor () -> Void)?
@@ -120,6 +124,11 @@ public final class LogoAnimator {
         self.effect = effect
     }
 
+    /// Chooses the signal to show, or `nil` for none, without starting it: the caller resumes.
+    public func select(signal: LogoSignal?) {
+        self.signal = signal
+    }
+
     /// Starts (or restarts) the chosen effect, or with no effect, fades to the chosen brightness.
     /// An effect starts with the step that leads away from where the logo is: a rise when it's
     /// dark (e.g. just turned on), a fall when it's lit (e.g. relit by a wake).
@@ -127,6 +136,9 @@ public final class LogoAnimator {
         cancel()
         if let morse {
             playMorse(morse)
+        } else if let signal {
+            let isDark = (emitter.fadeLevel ?? 1) < level / 2
+            play(signal.cycle(startingLit: isDark))
         } else if effect == .none {
             adjustBrightness(over: transitionDuration)
         } else {
