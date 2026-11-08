@@ -52,6 +52,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var controlState: ControlLink.State?
     /// Tells the controller when the battery may have changed, for the battery indicator.
     private var batteryObserver: BatteryObserver?
+    /// Gathers what other programs signal with `logolight-signal` (Claude Code's hooks) and shows it on the logo.
+    private var signals: SignalCenter?
+    private var signalObserver: NSObjectProtocol?
 
     private static let effectDefaultsKey = "Effect"
     private static let brightnessDefaultsKey = "Brightness"
@@ -84,6 +87,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         controller.autoEnablesPasswordless = !defaults.bool(forKey: Self.keepsPasswordDefaultsKey)
         controller.willPromptForPassword = { [weak self] in await self?.closeMenuForPasswordDialog() }
         observeDisplay()
+        observeSignals()
         // About once a minute. The controller only reads the battery while it's followed, and only
         // fades when the percentage has changed; the panel's slider then shows the new charge.
         batteryObserver = BatteryObserver { [weak self] in
@@ -432,7 +436,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     /// Returns the logo to normal before the app quits.
     func prepareToQuit() {
+        signals?.cancelTimers()
         controller.restoreNormalLighting()
+    }
+
+    /// Listens for `logolight-signal`, which posts a distributed notification. The center hands the
+    /// signal to show to the controller, which plays it while the logo is on and the display is awake.
+    private func observeSignals() {
+        signals = SignalCenter(
+            sleep: { try await ContinuousClock().sleep(for: .seconds($0)) },
+            apply: { [controller] in controller.setSignal($0) })
+        signalObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name(SignalCommand.notificationName), object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let command = SignalCommand(userInfo: notification.userInfo) else { return }
+            MainActor.assumeIsolated { self?.signals?.handle(command) }
+        }
     }
 
     /// Effects pause while the display or the Mac sleeps, or the built-in display goes away (the lid

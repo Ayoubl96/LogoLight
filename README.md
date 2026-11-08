@@ -73,6 +73,12 @@
 
 <sub>Drawn by LogoLight's own live view, with the effects' real timing (<code>swift scripts/make-media.swift</code> makes them again).</sub>
 
+## Signals
+
+Other programs can make the logo show what they are doing. Connect `logolight-signal` to Claude Code's
+hooks and the logo breathes while Claude Code works and blinks when it waits for you. See
+[docs/signals.md](docs/signals.md).
+
 ## Install
 
 1. **[Download LogoLight](https://github.com/Ark0N/LogoLight/releases/latest/download/LogoLight-1.1.1.zip)**.

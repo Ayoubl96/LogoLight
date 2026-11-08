@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "LogoLight", targets: ["LogoLight"]),
+        .executable(name: "logolight-signal", targets: ["logolight-signal"]),
     ],
     targets: [
         // Hardware access and privileged commands. No UI code lives here.
@@ -16,6 +17,11 @@ let package = Package(
         // The menu bar app.
         .executableTarget(
             name: "LogoLight",
+            dependencies: ["LogoLightCore"]
+        ),
+        // The command that tells the running app what to signal (`logolight-signal working`).
+        .executableTarget(
+            name: "logolight-signal",
             dependencies: ["LogoLightCore"]
         ),
         // Self-contained test runner (`swift run LogoLightTests`).
