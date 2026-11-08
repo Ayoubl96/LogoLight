@@ -244,8 +244,9 @@ App Sandbox, which rules out both direct control and the admin-command fallback.
 
 | Path | What's there |
 | --- | --- |
-| `Sources/LogoLightCore` | `LogoController`; direct control, brightness and effects (`LightEmitter`, `LogoEffect`); reading the state (I/O Registry); the documented command, the admin dialog and the sudoers rule; what the menu shows (`PanelState`) |
+| `Sources/LogoLightCore` | `LogoController`; direct control, brightness and effects (`LightEmitter`, `LogoEffect`); reading the state (I/O Registry); the documented command, the admin dialog and the sudoers rule; what the menu shows (`PanelState`); signals from outside (`LogoSignal`, `SignalCenter`, `SignalCommand`) |
 | `Sources/LogoLight` | The AppKit menu bar app, including the control panel (`ControlPanel.swift`) |
+| `Sources/logolight-signal` | The command that tells the running app what to signal (`logolight-signal working`), for Claude Code's hooks |
 | `Sources/LogoLightTests` | The test suite (`swift run LogoLightTests`) |
 | `Controls` | The Control Center control, an extension built by `scripts/build-app.sh` |
 | `Resources/Info.plist` | App bundle metadata (template) |
