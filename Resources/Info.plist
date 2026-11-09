@@ -28,6 +28,8 @@
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>LogoLight blinks the logo shortly before a calendar event starts, when you are away from the Mac. It only reads the start times.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Ark0N. Not affiliated with Apple Inc.</string>
 </dict>

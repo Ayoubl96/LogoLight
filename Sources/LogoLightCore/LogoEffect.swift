@@ -136,6 +136,8 @@ public final class LogoAnimator {
         cancel()
         if let morse {
             playMorse(morse)
+        } else if let signal, signal.isSteady {
+            adjustBrightness(over: transitionDuration, holding: 1)
         } else if let signal {
             let isDark = (emitter.fadeLevel ?? 1) < level / 2
             play(signal.cycle(startingLit: isDark))
@@ -179,7 +181,8 @@ public final class LogoAnimator {
 
     /// Applies a new brightness. A playing effect picks it up at its next step.
     public func brightnessDidChange() {
-        guard !isPlaying else { return }
+        // A steady signal holds the logo at full brightness, whatever the slider says.
+        guard !isPlaying, signal?.isSteady != true else { return }
         // A fade already under way follows the newest value, so dragging a slider doesn't
         // restart the fade at every step.
         if !isAdjusting { adjustBrightness(over: brightnessFadeDuration) }
@@ -263,17 +266,18 @@ public final class LogoAnimator {
         }
     }
 
-    /// Fades to the chosen brightness over `duration`. A fade follows changes made meanwhile
-    /// (a slider being dragged), and anything it couldn't follow gets a new fade, at the
-    /// slider's speed.
-    private func adjustBrightness(over duration: Double) {
+    /// Fades to the chosen brightness over `duration`, or to the `fixed` level when there is one (a steady
+    /// signal). A fade follows changes made meanwhile (a slider being dragged), and anything it
+    /// couldn't follow gets a new fade, at the slider's speed.
+    private func adjustBrightness(over duration: Double, holding fixed: Double? = nil) {
         isAdjusting = true
         task = Task { [weak self] in
             var applied: Double?
             var duration = duration
-            while let self, !Task.isCancelled, applied != self.level {
+            while let self, !Task.isCancelled, applied != (fixed ?? self.level) {
                 do {
-                    applied = try await self.emitter.fade(following: { self.level }, over: duration, sleep: self.sleep)
+                    applied = try await self.emitter.fade(following: { fixed ?? self.level }, over: duration,
+                                                          sleep: self.sleep)
                 } catch {
                     break
                 }

@@ -10,6 +10,9 @@ public enum SignalCommand: Equatable, Sendable {
     case pomodoroStart(minutes: Int)
     /// Ends the Pomodoro session, or silences its end-of-session blinking.
     case pomodoroStop
+    /// Asks for attention: the logo blinks if the user has been away from the Mac for a few minutes, and
+    /// stops when they come back. Does nothing while they are using it.
+    case remind
 
     /// A session lasts this long when the command doesn't say.
     public static let defaultPomodoroMinutes = 25
@@ -21,6 +24,7 @@ public enum SignalCommand: Equatable, Sendable {
     public static let usage = """
         usage: logolight-signal working | waiting | idle
                logolight-signal pomodoro start [minutes] | stop
+               logolight-signal remind
         """
 
     /// Reads the command line's arguments, without the program name. `nil` if they aren't a command.
@@ -31,6 +35,7 @@ public enum SignalCommand: Equatable, Sendable {
         case ["waiting"]: self = .claude(.waiting)
         case ["idle"]: self = .claude(nil)
         case ["pomodoro", "stop"]: self = .pomodoroStop
+        case ["remind"]: self = .remind
         case ["pomodoro", "start"]: self = .pomodoroStart(minutes: Self.defaultPomodoroMinutes)
         default:
             guard words.count == 3, words[0] == "pomodoro", words[1] == "start",
@@ -45,6 +50,7 @@ public enum SignalCommand: Equatable, Sendable {
         case .claude(let signal): ["command": signal?.rawValue ?? "idle"]
         case .pomodoroStart(let minutes): ["command": "pomodoro-start", "minutes": String(minutes)]
         case .pomodoroStop: ["command": "pomodoro-stop"]
+        case .remind: ["command": "remind"]
         }
     }
 

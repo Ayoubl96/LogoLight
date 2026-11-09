@@ -1,13 +1,14 @@
 import Foundation
 
-/// Gathers the signals from outside (Claude Code's hooks, the Pomodoro timer) and tells the logo which one
-/// to show. A Claude Code signal that nothing ends is dropped after `claudeTimeout`, so a hook that never
+/// Gathers the signals from outside (Claude Code's hooks, the Pomodoro timer, calls, the battery, reminders)
+/// and tells the logo which one to show. A Claude Code signal that nothing ends is dropped after `claudeTimeout`, so a hook that never
 /// fires (Claude Code killed) can't leave the logo signalling for ever.
 @MainActor
 public final class SignalCenter {
     public typealias Sleep = @Sendable (Double) async throws -> Void
 
     private let now: @MainActor () -> Date
+    private let idleSeconds: @MainActor () -> Double
     private let sleep: Sleep
     private let apply: @MainActor (LogoSignal?) -> Void
     /// What each source says now.
@@ -16,6 +17,7 @@ public final class SignalCenter {
     private var shown: LogoSignal?
     private var claudeExpiry: Task<Void, Never>?
     private var pomodoroTask: Task<Void, Never>?
+    private var reminderTask: Task<Void, Never>?
     /// When the session being timed ends, while one is.
     public private(set) var pomodoroEndsAt: Date?
 
@@ -24,13 +26,25 @@ public final class SignalCenter {
     /// How long the logo blinks at the end of a Pomodoro session, if nobody stops it first.
     public var finishedDuration = 20.0
 
+    /// How long the user must have been away from the Mac (no keyboard, mouse or trackpad) for a reminder to blink.
+    public var minimumIdle = 180.0
+    /// A reminder stops by itself after this long, if the user hasn't come back.
+    public var reminderDuration = 600.0
+    /// How often a blinking reminder looks for the user coming back.
+    public var reminderLookInterval = 2.0
+    /// A reminder stops when the user has been active this recently.
+    public var activeWithin = 5.0
+
     /// Called when the Pomodoro session starts, ends or is stopped, so a menu can show it.
     public var onPomodoroChange: (@MainActor () -> Void)?
 
     /// `apply` is called with the signal to show, or `nil`, each time that changes.
-    public init(now: @escaping @MainActor () -> Date = { Date() }, sleep: @escaping Sleep,
-                apply: @escaping @MainActor (LogoSignal?) -> Void) {
+    /// `idleSeconds` says how long the user has been away from the Mac. The default says "never away", so
+    /// reminders are ignored unless it's given.
+    public init(now: @escaping @MainActor () -> Date = { Date() }, idleSeconds: @escaping @MainActor () -> Double = { 0 },
+                sleep: @escaping Sleep, apply: @escaping @MainActor (LogoSignal?) -> Void) {
         self.now = now
+        self.idleSeconds = idleSeconds
         self.sleep = sleep
         self.apply = apply
     }
@@ -40,6 +54,7 @@ public final class SignalCenter {
         case .claude(let signal): setClaude(signal)
         case .pomodoroStart(let minutes): startPomodoro(minutes: minutes)
         case .pomodoroStop: stopPomodoro()
+        case .remind: remind()
         }
     }
 
@@ -105,11 +120,51 @@ public final class SignalCenter {
         pomodoroEndsAt.map { max(0, $0.timeIntervalSince(now())) }
     }
 
-    /// Whether the Mac is charging with the battery indicator on: the logo pulses softly, below every other
-    /// signal.
-    public func setCharging(_ charging: Bool) {
-        guard sources.charging != charging else { return }
-        sources.charging = charging
+    /// What the battery says, with the battery indicator on: `.charging`, `.fullBattery`, `.lowBattery`, or
+    /// `nil` for nothing to show. Anything else is ignored.
+    public func setPower(_ signal: LogoSignal?) {
+        guard signal == nil || signal == .charging || signal == .fullBattery || signal == .lowBattery,
+              sources.power != signal else { return }
+        sources.power = signal
+        update()
+    }
+
+    /// Whether the microphone or the camera is in use.
+    public func setInCall(_ inCall: Bool) {
+        guard sources.inCall != inCall else { return }
+        sources.inCall = inCall
+        update()
+    }
+
+    /// Asks for attention, but only if the user has been away from the Mac for `minimumIdle` seconds: a
+    /// blink, which stops when they come back (or after `reminderDuration`). While they're using the Mac
+    /// nothing happens, because the screen already reaches them. Asking again while it blinks does nothing.
+    public func remind() {
+        guard !sources.reminder, idleSeconds() >= minimumIdle else { return }
+        sources.reminder = true
+        update()
+        reminderTask = Task { [weak self, sleep = self.sleep, look = reminderLookInterval,
+                               limit = reminderDuration, within = activeWithin] in
+            var waited = 0.0
+            while waited < limit {
+                do { try await sleep(look) } catch { return }
+                guard let self, !Task.isCancelled else { return }
+                waited += look
+                if self.idleSeconds() < within { break }
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.reminderTask = nil
+            self.sources.reminder = false
+            self.update()
+        }
+    }
+
+    /// Stops a blinking reminder.
+    public func stopReminder() {
+        guard sources.reminder else { return }
+        reminderTask?.cancel()
+        reminderTask = nil
+        sources.reminder = false
         update()
     }
 
@@ -119,6 +174,8 @@ public final class SignalCenter {
         claudeExpiry = nil
         pomodoroTask?.cancel()
         pomodoroTask = nil
+        reminderTask?.cancel()
+        reminderTask = nil
     }
 
     private func update() {

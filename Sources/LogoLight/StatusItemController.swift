@@ -17,6 +17,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let lidClosedItem = NSMenuItem()
     private let launchAtLoginItem = NSMenuItem()
     private let pomodoroItem = NSMenuItem()
+    private let callItem = NSMenuItem()
+    private let calendarItem = NSMenuItem()
 
     private var status = LogoStatus.unsupported
     /// Waiting for a password or `sudo` (the fallback path), or for the menu to close before a
@@ -56,6 +58,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     /// Gathers what other programs signal with `logolight-signal` (Claude Code's hooks) and shows it on the logo.
     private var signals: SignalCenter?
     private var signalObserver: NSObjectProtocol?
+    /// Lights the logo while the microphone or the camera is in use, if the user hasn't turned that off.
+    private var callMonitor: CallMonitor?
+    private var calendarReminders: CalendarReminders?
+    private static let showsCallsDefaultsKey = "ShowsCalls"
+    private static let calendarRemindersDefaultsKey = "CalendarReminders"
+    private var showsCalls: Bool {
+        UserDefaults.standard.object(forKey: Self.showsCallsDefaultsKey) as? Bool ?? true
+    }
 
     private static let effectDefaultsKey = "Effect"
     private static let brightnessDefaultsKey = "Brightness"
@@ -89,12 +99,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         controller.willPromptForPassword = { [weak self] in await self?.closeMenuForPasswordDialog() }
         observeDisplay()
         observeSignals()
-        updateChargingSignal()
+        updatePowerSignal()
         // About once a minute. The controller only reads the battery while it's followed, and only
         // fades when the percentage has changed; the panel's slider then shows the new charge.
         batteryObserver = BatteryObserver { [weak self] in
             self?.controller.batteryDidChange()
-            self?.updateChargingSignal()
+            self?.updatePowerSignal()
             self?.updateMenu()
         }
 
@@ -162,6 +172,21 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         pomodoroItem.action = #selector(togglePomodoro)
         pomodoroItem.toolTip = "The logo breathes slowly for the length of the session, then blinks when it's over."
 
+        // The logo stays lit while the microphone or the camera is in use, so colleagues behind the screen
+        // can see you're in a call.
+        callItem.title = "Lit During Calls"
+        if #available(macOS 14.4, *) { callItem.subtitle = "Microphone or camera in use" }
+        callItem.target = self
+        callItem.action = #selector(toggleCalls)
+        callItem.toolTip = "Keep the logo lit while the microphone or the camera is in use, so people behind you can tell you're in a call."
+
+        // The logo blinks, only when you're away from the Mac, shortly before a calendar event starts.
+        calendarItem.title = "Calendar Reminders"
+        if #available(macOS 14.4, *) { calendarItem.subtitle = "Blinks when you're away" }
+        calendarItem.target = self
+        calendarItem.action = #selector(toggleCalendarReminders)
+        calendarItem.toolTip = "Blink the logo five minutes before an event in your calendar, but only if you've been away from the Mac for a few minutes."
+
         launchAtLoginItem.title = "Launch at Login"
         launchAtLoginItem.target = self
         launchAtLoginItem.action = #selector(toggleLaunchAtLogin)
@@ -172,7 +197,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.items = [
             panelItem,
             .separator(),
-            pomodoroItem,
+            pomodoroItem, callItem, calendarItem,
             .separator(),
             passwordlessItem, lidClosedItem, launchAtLoginItem,
             .separator(),
@@ -305,6 +330,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         lidClosedItem.state = controller.lightsWithLidClosed ? .on : .off
         launchAtLoginItem.state = isLaunchAtLoginEnabled ? .on : .off
         updatePomodoroItem()
+        // Signals need direct control of the logo.
+        let canSignal = status.isSupported && controller.canControlDirectly
+        callItem.isHidden = !canSignal
+        callItem.state = showsCalls ? .on : .off
+        calendarItem.isHidden = !canSignal
+        calendarItem.state = UserDefaults.standard.bool(forKey: Self.calendarRemindersDefaultsKey) ? .on : .off
         updateControl(state)
     }
 
@@ -428,7 +459,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private func setFollowsBattery(_ follows: Bool) {
         controller.setFollowsBattery(follows)
         UserDefaults.standard.set(follows, forKey: Self.followsBatteryDefaultsKey)
-        updateChargingSignal()
+        updatePowerSignal()
         // The slider now shows the charge, or the chosen brightness again.
         updateMenu()
     }
@@ -471,6 +502,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     /// Returns the logo to normal before the app quits.
     func prepareToQuit() {
         signals?.cancelTimers()
+        callMonitor?.stop()
+        calendarReminders?.stop()
         controller.restoreNormalLighting()
     }
 
@@ -478,9 +511,25 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     /// signal to show to the controller, which plays it while the logo is on and the display is awake.
     private func observeSignals() {
         signals = SignalCenter(
+            idleSeconds: { UserActivity.idleSeconds() },
             sleep: { try await ContinuousClock().sleep(for: .seconds($0)) },
             apply: { [controller] in controller.setSignal($0) })
         signals?.onPomodoroChange = { [weak self] in self?.updateMenu() }
+        callMonitor = CallMonitor(
+            microphoneInUse: { CallSensors.microphoneInUse() }, cameraInUse: { CallSensors.cameraInUse() },
+            sleep: { try await ContinuousClock().sleep(for: .seconds($0)) },
+            onChange: { [weak self] inCall in self?.signals?.setInCall(inCall) })
+        if showsCalls { callMonitor?.start() }
+        calendarReminders = CalendarReminders(onEvent: { [weak self] in self?.signals?.remind() })
+        if UserDefaults.standard.bool(forKey: Self.calendarRemindersDefaultsKey) {
+            Task { @MainActor [weak self] in
+                // Allowed once already: no prompt. If the user has withdrawn it since, it's turned off.
+                if await self?.calendarReminders?.start() != true {
+                    UserDefaults.standard.set(false, forKey: Self.calendarRemindersDefaultsKey)
+                    self?.updateMenu()
+                }
+            }
+        }
         signalObserver = DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name(SignalCommand.notificationName), object: nil, queue: .main
         ) { [weak self] notification in
@@ -564,10 +613,45 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// With the battery indicator on, the logo also pulses while the Mac charges. (It shows the charge as
-    /// brightness; the pulse says it's going up.)
-    private func updateChargingSignal() {
-        signals?.setCharging(controller.followsBattery && Battery.isCharging() == true)
+    /// With the battery indicator on, the logo also shows the power state: it pulses while the Mac charges,
+    /// stays lit once the battery is full and still plugged in, and blinks below 10% when not plugged in.
+    private func updatePowerSignal() {
+        guard controller.followsBattery else {
+            signals?.setPower(nil)
+            return
+        }
+        signals?.setPower(PowerSignal.signal(charge: Battery.charge(), isPluggedIn: Battery.isPluggedIn(),
+                                             isCharging: Battery.isCharging()))
+    }
+
+    @objc private func toggleCalls() {
+        let shows = !showsCalls
+        UserDefaults.standard.set(shows, forKey: Self.showsCallsDefaultsKey)
+        if shows {
+            callMonitor?.start()
+        } else {
+            callMonitor?.stop() // a call that was lighting the logo is over
+        }
+        updateMenu()
+    }
+
+    @objc private func toggleCalendarReminders() {
+        let enable = !UserDefaults.standard.bool(forKey: Self.calendarRemindersDefaultsKey)
+        guard enable else {
+            calendarReminders?.stop()
+            UserDefaults.standard.set(false, forKey: Self.calendarRemindersDefaultsKey)
+            updateMenu()
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self, let reminders = self.calendarReminders else { return }
+            if await reminders.start() {
+                UserDefaults.standard.set(true, forKey: Self.calendarRemindersDefaultsKey)
+            } else {
+                report(CalendarAccessError(), title: "Calendar access is off")
+            }
+            updateMenu()
+        }
     }
 
     @objc private func togglePomodoro() {
@@ -635,5 +719,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         alert.messageText = title
         alert.informativeText = error.localizedDescription
         alert.runModal()
+    }
+}
+
+/// Shown when the user doesn't allow LogoLight to read the calendar.
+private struct CalendarAccessError: LocalizedError {
+    var errorDescription: String? {
+        "Allow LogoLight to access your calendar in System Settings, Privacy & Security, Calendars, then try again."
     }
 }
