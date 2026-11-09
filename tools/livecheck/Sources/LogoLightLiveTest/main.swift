@@ -9,7 +9,7 @@
 // keyboard backlight twice, for a simulated display sleep.
 //
 //   .build/debug/LogoLightLiveTest --morse   # only the Morse code check (about 15 s)
-//   .build/debug/LogoLightLiveTest --signals # only the signals check (about 35 s)
+//   .build/debug/LogoLightLiveTest --signals # only the signals check (about 55 s)
 //   .build/debug/LogoLightLiveTest --lid
 //
 // checks Lit with Lid Closed instead, with an external display attached. It asks aloud for the
@@ -181,11 +181,13 @@ if CommandLine.arguments.contains("--morse-loop") {
 /// Each signal in turn, from the logo held at brightness 0.5 with Pulse chosen. While one plays the logo
 /// should move in its own pattern, not Pulse's: working breathes (a cycle takes about 6.8 s, so min and
 /// max should span the range), focus does so even more slowly, waiting blinks about once a second, charging
-/// pulses a little faster than Pulse. Cleared, the logo goes back to Pulse and then to the brightness.
+/// pulses a little faster than Pulse, reminder blinks twice then rests, lowBattery blinks slowly, and inCall and
+/// fullBattery hold the logo at 1 whatever the slider says (the factor should stay at 1.0). Cleared, the logo goes back to Pulse and then to the brightness.
 @MainActor func signalsCheck() async {
     controller.setEffect(.pulse)
     await sample("effect Pulse", seconds: 3)
-    for (signal, seconds) in [(LogoSignal.working, 8.0), (.waiting, 4), (.focus, 9), (.charging, 4)] {
+    for (signal, seconds) in [(LogoSignal.working, 8.0), (.waiting, 4), (.reminder, 4), (.focus, 9), (.charging, 4),
+                              (.lowBattery, 5), (.inCall, 4), (.fullBattery, 4)] {
         controller.setSignal(signal)
         await sample("signal \(signal.rawValue)", seconds: seconds)
     }

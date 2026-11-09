@@ -137,7 +137,9 @@ if [ -d "$APPEX" ]; then
         --entitlements build/controls/Controls.entitlements "$APPEX"
 fi
 codesign --force --sign "$SIGN_IDENTITY" --options runtime "$TIMESTAMP" "$APP/Contents/MacOS/logolight-signal"
-codesign --force --sign "$SIGN_IDENTITY" --options runtime "$TIMESTAMP" "$APP"
+# The app asks to read the calendar (Calendar Reminders), which the hardened runtime only allows with this entitlement.
+codesign --force --sign "$SIGN_IDENTITY" --options runtime "$TIMESTAMP" \
+    --entitlements Resources/LogoLight.entitlements "$APP"
 codesign --verify --strict --deep "$APP"
 
 echo "==> Built $APP ($VERSION, build $BUILD_NUMBER)"

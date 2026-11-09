@@ -28,6 +28,17 @@ extension Battery {
     /// Whether the internal battery is charging (plugged in and not yet full), or `nil` on a Mac without
     /// a battery or when it can't be read.
     public static func isCharging() -> Bool? {
+        internalBattery()?[kIOPSIsChargingKey] as? Bool
+    }
+
+    /// Whether the Mac is running on its charger (also when the battery is full and not charging), or `nil`
+    /// on a Mac without a battery or when it can't be read.
+    public static func isPluggedIn() -> Bool? {
+        (internalBattery()?[kIOPSPowerSourceStateKey] as? String).map { $0 == kIOPSACPowerValue }
+    }
+
+    /// The description of the internal battery, if there is one.
+    private static func internalBattery() -> [String: Any]? {
         guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef]
         else { return nil }
@@ -35,10 +46,9 @@ extension Battery {
             guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue()
                     as? [String: Any],
                   description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
-                  description[kIOPSIsPresentKey] as? Bool != false,
-                  let charging = description[kIOPSIsChargingKey] as? Bool
+                  description[kIOPSIsPresentKey] as? Bool != false
             else { continue }
-            return charging
+            return description
         }
         return nil
     }

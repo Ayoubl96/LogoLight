@@ -14,6 +14,19 @@ private func settle() async {
     for _ in 0..<200 { await Task.yield() }
 }
 
+/// How long the user has been away from the Mac.
+@MainActor
+private final class FakeIdle {
+    var seconds = 0.0
+}
+
+/// Stands in for the microphone and the camera.
+@MainActor
+private final class FakeSensors {
+    var microphone = false
+    var camera = false
+}
+
 /// A stand-in for the time of day.
 @MainActor
 private final class FakeNow {
@@ -24,9 +37,10 @@ private final class FakeNow {
 /// wait is one of `instantFor` seconds.
 @MainActor
 private func makeCenter(_ recorder: Recorder, instant: Bool = false, instantFor: Set<Double> = [],
-                        now: FakeNow = FakeNow()) -> SignalCenter {
+                        now: FakeNow = FakeNow(), idle: FakeIdle = FakeIdle()) -> SignalCenter {
     SignalCenter(
         now: { now.date },
+        idleSeconds: { idle.seconds },
         sleep: { seconds in
             await recorder.note(seconds)
             if !instant, !instantFor.contains(seconds) { try await Task.sleep(for: .seconds(3600)) }
@@ -223,17 +237,177 @@ func signalCenterTests(_ t: TestHarness) async {
         t.expect(r.shown == [.working, .finished, .working], "\(r.shown)")
         center.cancelTimers()
     }
-    t.test("charging pulses below every other signal, and stops with the charge") {
+    t.test("the battery's signal comes below Claude Code and the session, and goes with it") {
         let r = Recorder()
         let center = makeCenter(r)
-        center.setCharging(true)
-        center.setCharging(true) // nothing new
+        center.setPower(.charging)
+        center.setPower(.charging) // nothing new
         center.startPomodoro(minutes: 25)
         center.setClaude(.working)
         center.setClaude(nil)
         center.stopPomodoro()
-        center.setCharging(false)
+        center.setPower(nil)
         t.expect(r.shown == [.charging, .focus, .working, .focus, .charging, nil], "\(r.shown)")
         center.cancelTimers()
+    }
+
+    t.test("only the battery's signals come from the battery, and a low battery beats Claude Code working") {
+        let r = Recorder()
+        let center = makeCenter(r)
+        center.setPower(.working)
+        center.setPower(.inCall)
+        t.expect(r.shown.isEmpty, "\(r.shown)")
+        center.setClaude(.working)
+        center.setPower(.lowBattery)
+        center.setPower(.fullBattery)
+        t.expect(r.shown == [.working, .lowBattery, .working], "\(r.shown)")
+        center.cancelTimers()
+    }
+
+    t.test("a call comes before everything, and the logo goes back when it ends") {
+        let r = Recorder()
+        let center = makeCenter(r)
+        center.setClaude(.waiting)
+        center.setInCall(true)
+        center.setInCall(true) // nothing new
+        center.setPower(.lowBattery)
+        center.setInCall(false)
+        t.expect(r.shown == [.waiting, .inCall, .waiting], "\(r.shown)")
+        center.cancelTimers()
+    }
+
+    t.test("works out the battery's signal") {
+        func signal(_ charge: Double?, plugged: Bool?, charging: Bool?) -> LogoSignal? {
+            PowerSignal.signal(charge: charge, isPluggedIn: plugged, isCharging: charging)
+        }
+        t.expectEqual(signal(0.5, plugged: true, charging: true), .charging)
+        t.expectEqual(signal(1, plugged: true, charging: false), .fullBattery)
+        t.expectEqual(signal(0.995, plugged: true, charging: false), .fullBattery)
+        t.expectEqual(signal(0.8, plugged: true, charging: false), nil) // holding below full
+        t.expectEqual(signal(0.05, plugged: false, charging: false), .lowBattery)
+        t.expectEqual(signal(0.099, plugged: false, charging: false), .lowBattery)
+        t.expectEqual(signal(0.10, plugged: false, charging: false), nil)
+        t.expectEqual(signal(0.05, plugged: true, charging: true), .charging) // plugged in: not low
+        t.expectEqual(signal(0.5, plugged: false, charging: false), nil)
+        t.expectEqual(signal(nil, plugged: true, charging: true), nil)
+        t.expectEqual(signal(0.5, plugged: nil, charging: true), nil)
+    }
+
+    await t.test("a reminder blinks only when the user has been away") {
+        let r = Recorder()
+        let idle = FakeIdle()
+        let center = makeCenter(r, idle: idle)
+        idle.seconds = 30
+        center.remind()
+        t.expect(r.shown.isEmpty, "the user is using the Mac: \(r.shown)")
+        t.expect(!center.sources.reminder)
+        idle.seconds = 300
+        center.remind()
+        center.remind() // already blinking
+        t.expect(r.shown == [.reminder], "\(r.shown)")
+        center.stopReminder()
+        t.expect(r.shown == [.reminder, nil], "\(r.shown)")
+        center.stopReminder()
+        t.expect(r.shown == [.reminder, nil], "\(r.shown)")
+    }
+
+    await t.test("a reminder stops when the user comes back") {
+        let r = Recorder()
+        let idle = FakeIdle()
+        idle.seconds = 300
+        let center = SignalCenter(
+            idleSeconds: { r.sleeps.count >= 3 ? 1 : idle.seconds },
+            sleep: { seconds in await r.note(seconds) },
+            apply: { r.shown.append($0) })
+        center.remind()
+        await settle()
+        t.expectEqual(r.sleeps, [2, 2, 2])
+        t.expect(r.shown == [.reminder, nil], "\(r.shown)")
+    }
+
+    await t.test("a reminder nobody answers stops after its time") {
+        let r = Recorder()
+        let idle = FakeIdle()
+        idle.seconds = 300
+        let center = makeCenter(r, instantFor: [2], idle: idle)
+        center.reminderDuration = 6
+        center.remind()
+        await settle()
+        t.expectEqual(r.sleeps, [2, 2, 2])
+        t.expect(r.shown == [.reminder, nil], "\(r.shown)")
+    }
+
+    t.test("a reminder is read from the command line") {
+        t.expectEqual(SignalCommand(arguments: ["remind"]), .remind)
+        t.expectEqual(SignalCommand(arguments: ["remind", "now"]), nil)
+        t.expectEqual(SignalCommand(userInfo: SignalCommand.remind.userInfo), .remind)
+    }
+
+    t.test("a call is believed after a couple of looks, and over after a few without") {
+        let sensors = FakeSensors()
+        var changes: [Bool] = []
+        let monitor = CallMonitor(microphoneInUse: { sensors.microphone }, cameraInUse: { sensors.camera },
+                                  sleep: { _ in }, onChange: { changes.append($0) })
+        sensors.microphone = true
+        monitor.look()
+        t.expect(changes.isEmpty, "one look isn't enough")
+        monitor.look()
+        t.expect(changes == [true] && monitor.isInCall, "\(changes)")
+        sensors.microphone = false
+        monitor.look(); monitor.look()
+        t.expect(changes == [true], "still in the call")
+        monitor.look()
+        t.expect(changes == [true, false] && !monitor.isInCall, "\(changes)")
+    }
+
+    t.test("a blip doesn't make a call, and a pause doesn't end one") {
+        let sensors = FakeSensors()
+        var changes: [Bool] = []
+        let monitor = CallMonitor(microphoneInUse: { sensors.microphone }, cameraInUse: { sensors.camera },
+                                  sleep: { _ in }, onChange: { changes.append($0) })
+        sensors.microphone = true
+        monitor.look()
+        sensors.microphone = false
+        monitor.look()
+        sensors.microphone = true
+        monitor.look()
+        t.expect(changes.isEmpty, "\(changes)")
+        monitor.look() // two in a row now
+        t.expect(changes == [true], "\(changes)")
+        sensors.microphone = false
+        monitor.look(); monitor.look()
+        sensors.camera = true // the camera counts as well
+        monitor.look()
+        sensors.camera = false
+        monitor.look(); monitor.look()
+        t.expect(changes == [true], "the pause was short: \(changes)")
+    }
+
+    t.test("the camera alone is a call, and stopping the monitor ends it") {
+        let sensors = FakeSensors()
+        var changes: [Bool] = []
+        let monitor = CallMonitor(microphoneInUse: { sensors.microphone }, cameraInUse: { sensors.camera },
+                                  sleep: { _ in }, onChange: { changes.append($0) })
+        sensors.camera = true
+        monitor.look(); monitor.look()
+        t.expect(changes == [true], "\(changes)")
+        monitor.stop()
+        t.expect(changes == [true, false] && !monitor.isInCall, "\(changes)")
+        monitor.stop()
+        t.expect(changes == [true, false], "\(changes)")
+    }
+
+    await t.test("the monitor looks at once when it starts") {
+        let sensors = FakeSensors()
+        sensors.camera = true
+        var looks = 0
+        let monitor = CallMonitor(microphoneInUse: { looks += 1; return sensors.microphone },
+                                  cameraInUse: { sensors.camera },
+                                  sleep: { _ in try await Task.sleep(for: .seconds(3600)) }, onChange: { _ in })
+        monitor.start()
+        monitor.start() // already running
+        await settle()
+        t.expectEqual(looks, 1)
+        monitor.stop()
     }
 }
